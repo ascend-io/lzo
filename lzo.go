@@ -1,15 +1,5 @@
 package lzo
 
-/*
-#cgo LDFLAGS: -llzo2
-#include <lzo/lzo1x.h>
-
-static int lzo_initialize(void) { return lzo_init(); }
-static int lzo1x_1_mem_compress() { return LZO1X_1_MEM_COMPRESS; }
-static int lzo1x_999_mem_compress() { return LZO1X_999_MEM_COMPRESS; }
-*/
-import "C"
-
 import (
 	"bytes"
 	"encoding/binary"
@@ -307,7 +297,8 @@ func (z *Reader) nextBlock() {
 	// Decompress
 	data := make([]byte, dstLen)
 	if srcLen < dstLen {
-		_, z.err = lzoDecompress(block, data)
+		br := NewReader(block)
+		_, z.err = Decompress1X(br, srcLen, data)
 		if z.err != nil {
 			return
 		}
@@ -493,15 +484,7 @@ func (z *Writer) Write(p []byte) (int, error) {
 	}
 	// Write headers
 	if z.compressor == nil {
-		if z.level == BestCompression {
-			z.compressor = func(src []byte) ([]byte, error) {
-				return lzoCompress(src, lzoCompressBest)
-			}
-		} else {
-			z.compressor = func(src []byte) ([]byte, error) {
-				return lzoCompress(src, lzoCompressSpeed)
-			}
-		}
+		z.compressor = Compress1X
 		z.err = z.writeHeader()
 		if z.err != nil {
 			return 0, z.err
@@ -577,30 +560,6 @@ func lzoVersion() uint16 {
 	return uint16(C.lzo_version())
 }
 
-func lzoCompress(src []byte, compress func([]byte, []byte, *int) C.int) ([]byte, error) {
-	dstSize := 0
-	dst := make([]byte, lzoDestinationSize(len(src)))
-	err := compress(src, dst, &dstSize)
-	if err != 0 {
-		return nil, fmt.Errorf("lzo: errno %d", err)
-	}
-	return dst[0:dstSize], nil
-}
-
 func lzoDestinationSize(n int) int {
 	return (n + n/16 + 64 + 3)
-}
-
-func lzoCompressSpeed(src []byte, dst []byte, dstSize *int) C.int {
-	wrkmem := make([]byte, int(C.lzo1x_1_mem_compress()))
-	return C.lzo1x_1_compress((*C.uchar)(unsafe.Pointer(&src[0])), C.lzo_uint(len(src)),
-		(*C.uchar)(unsafe.Pointer(&dst[0])), (*C.lzo_uint)(unsafe.Pointer(dstSize)),
-		unsafe.Pointer(&wrkmem[0]))
-}
-
-func lzoCompressBest(src []byte, dst []byte, dstSize *int) C.int {
-	wrkmem := make([]byte, int(C.lzo1x_999_mem_compress()))
-	return C.lzo1x_999_compress((*C.uchar)(unsafe.Pointer(&src[0])), C.lzo_uint(len(src)),
-		(*C.uchar)(unsafe.Pointer(&dst[0])), (*C.lzo_uint)(unsafe.Pointer(dstSize)),
-		unsafe.Pointer(&wrkmem[0]))
 }
